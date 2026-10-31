@@ -4100,6 +4100,13 @@ function buildContext(key, cssList, docList) {
   const photoShape = /shape:\s*(photographic|portfolio)/i.test(stampText);
   const job = ((/\bjob:\s*([a-z][a-z /-]*)/i.exec(stampText) || [])[1] || '').trim().toLowerCase();
   for (const d of docs) { postureByFile[d.file] = posture; heroPostureByFile[d.file] = heroPosture; photoShapeByFile[d.file] = photoShape; jobByFile[d.file] = job; }
+  // a framework page rendered through --url has no html doc of its own: the stamp in the stylesheets passed beside it is its stamp
+  for (const u of opts.urls || []) {
+    let route = ''; try { route = new URL(u).pathname.replace(/\/$/, '') || '/'; } catch { /* not a url */ }
+    const field = (/hero:\s*([^·*\n]+)/i.exec(stampText) || [])[1] || '';
+    const own = new RegExp(`(settled|banner|poster|ledge|corridor|stage|counter|index)\\s*\\(${route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'i').exec(field);
+    postureByFile[u] = posture; heroPostureByFile[u] = heroPosture === 'custom' ? 'custom' : (own?.[1] || heroPosture).toLowerCase(); photoShapeByFile[u] = photoShape; jobByFile[u] = job;
+  }
   const allCss = cssFiles.map((c) => c.raw).join('\n') + '\n'
     + docs.map((d) => d.styles.map((st) => st.css).join('\n')).join('\n');
   const tokensOnly = !docs.length && rules.length > 0 && rules.every(isTokenRule);
