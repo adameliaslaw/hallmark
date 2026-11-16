@@ -136,13 +136,17 @@ export async function renderCheck(htmlFiles, metaIn) {
         }).catch(() => {});
         if (isUrl(file)) {
           const stamp = await page.evaluate(async () => { let t = [...document.querySelectorAll('style')].map((x) => x.textContent.slice(0, 4000)).join('\n'); for (const l of document.querySelectorAll('link[rel~="stylesheet"]')) { try { t += '\n' + (await (await fetch(l.href)).text()).slice(0, 4000); } catch {} } return t; }).catch(() => '');
-          meta.postureByFile[file] = (/posture:\s*(restrained|committed|full-palette|drenched)/i.exec(stamp)?.[1] || 'restrained').toLowerCase();
+          // a dev server (Vite, Next) strips comments from the CSS it serves, so a stamp the static tier read from the stylesheet beside the URL stays unless the page carries its own
+          const domPosture = /posture:\s*(restrained|committed|full-palette|drenched)/i.exec(stamp)?.[1];
+          meta.postureByFile[file] = (domPosture || meta.postureByFile[file] || 'restrained').toLowerCase();
           const field = (/hero:\s*([^·*\n]+)/i.exec(stamp) || [])[1] || '';
           let route = ''; try { route = new URL(file).pathname.replace(/\/$/, '') || '/'; } catch {}
           const own = new RegExp(`(settled|banner|poster|ledge|corridor|stage|counter|index)\\s*\\(${route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\)`, 'i').exec(field);
-          meta.photoShapeByFile[file] = /shape:\s*(photographic|portfolio)/i.test(stamp);
-          meta.jobByFile[file] = ((/\bjob:\s*([a-z][a-z /-]*)/i.exec(stamp) || [])[1] || '').trim().toLowerCase();
-          meta.heroPostureByFile[file] = /theme:\s*custom\b/i.test(stamp) ? 'custom' : ((own || /(settled|banner|poster|ledge|corridor|stage|counter|index)\b/i.exec(field) || [])[1] || '').toLowerCase();
+          if (/shape:\s*(photographic|portfolio)/i.test(stamp)) meta.photoShapeByFile[file] = true;
+          const domJob = ((/\bjob:\s*([a-z][a-z /-]*)/i.exec(stamp) || [])[1] || '').trim().toLowerCase();
+          if (domJob) meta.jobByFile[file] = domJob;
+          const domHero = /theme:\s*custom\b/i.test(stamp) ? 'custom' : ((own || /(settled|banner|poster|ledge|corridor|stage|counter|index)\b/i.exec(field) || [])[1] || '').toLowerCase();
+          if (domHero) meta.heroPostureByFile[file] = domHero;
         }
         const pageMeta = { genre: meta.genre, posture: meta.postureByFile[file] || 'restrained' };
         const prefix = heroOnly ? 'hero-' : '';
@@ -322,10 +326,13 @@ function inventory(selectors) {
   const links = uniq([...document.querySelectorAll('a[href]')].map((a) => a.getAttribute('href')).filter((h) => h && h.trim() && h.trim() !== '#').map(key));
   const fieldsIn = (root) => {
     const n = {};
-    return uniq([...root.querySelectorAll('input, select, textarea, button[name]')].filter((f) => f.getAttribute('name') || !(f.tagName === 'INPUT' && /^(submit|button|reset|image|hidden)$/i.test(f.getAttribute('type') || ''))).map((f) => {
+    return uniq([...root.querySelectorAll('input, select, textarea, button[name]')].filter((f) => f.getAttribute('name') || !(f.tagName === 'INPUT' && /^(submit|button|reset|image|hidden)$/i.test(f.getAttribute('type') || ''))).flatMap((f) => {
       const hook = f.getAttribute('data-testid') || f.getAttribute('data-test') || f.getAttribute('data-cy');
-      if (f.getAttribute('name')) return f.getAttribute('name');
-      if (f.id && !/^(:|radix-|headlessui-|react-aria)/.test(f.id)) return `#${f.id}`;
+      // a field is known by every handle it has: a redesign that adds a name to an input that only had an id has not lost the field
+      const handles = [];
+      if (f.getAttribute('name')) handles.push(f.getAttribute('name'));
+      if (f.id && !/^(:|radix-|headlessui-|react-aria)/.test(f.id)) handles.push(`#${f.id}`);
+      if (handles.length) return handles;
       if (hook) return `[${hook}]`;
       const t = f.tagName === 'INPUT' ? (f.getAttribute('type') || 'text').toLowerCase() : f.tagName.toLowerCase();
       n[t] = (n[t] || 0) + 1;
